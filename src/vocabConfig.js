@@ -26,7 +26,7 @@ export const SHEET_CATEGORIES = [
   //   nameTh: "TGAT ชุดที่ 1",
   //   nameEn: "TGAT Set 1",
   //   accent: "#5B7FE0", // สีประจำหมวดหมู่ (hex code ใดก็ได้)
-  //   csvUrl: "https://docs.google.com/spreadsheets/d/e/XXXXXXXXXXXXXXXXXXXXXXXXXXXX/pub?output=csv",
+  //   csvUrl: "https://docs.google.com/spreadsheets/d/1_exFajkCwY7rw-7id_IPQBUejb9iKcPq/edit?usp=drivesdk&ouid=100224714940591269989&rtpof=true&sd=true",
   // },
   // {
   //   id: "my-alevel",
