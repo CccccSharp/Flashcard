@@ -20,21 +20,13 @@
 //    ลบทิ้งได้ถ้าไม่ต้องการ
 
 export const SHEET_CATEGORIES = [
-  // ตัวอย่าง — แก้ csvUrl เป็นลิงก์ของคุณเอง แล้วลบเครื่องหมาย // ข้างหน้าออก
-  // {
-  //   id: "my-tgat",
-  //   nameTh: "TGAT ชุดที่ 1",
-  //   nameEn: "TGAT Set 1",
-  //   accent: "#5B7FE0", // สีประจำหมวดหมู่ (hex code ใดก็ได้)
-  //   csvUrl: "https://docs.google.com/spreadsheets/d/1_exFajkCwY7rw-7id_IPQBUejb9iKcPq/edit?usp=drivesdk&ouid=100224714940591269989&rtpof=true&sd=true",
-  // },
-  // {
-  //   id: "my-alevel",
-  //   nameTh: "A-Level ชุดที่ 1",
-  //   nameEn: "A-Level Set 1",
-  //   accent: "#2BB673",
-  //   csvUrl: "https://docs.google.com/spreadsheets/d/e/YYYYYYYYYYYYYYYYYYYYYYYYYYYY/pub?output=csv",
-  // },
+   {
+     id: "my-alevel",
+     nameTh: "A-Level ชุดที่ 1",
+     nameEn: "A-Level Set 1",
+     accent: "#2BB673",
+     csvUrl: "https://docs.google.com/spreadsheets/d/e/1_exFajkCwY7rw-7id_IPQBUejb9iKcPq/pub?output=csv",
+   },
 ];
 
 export const SAMPLE_CATEGORIES = [
