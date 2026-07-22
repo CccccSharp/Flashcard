@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import Papa from "papaparse";
-import { Languages, ArrowLeft, Volume2, Flame, Sparkles, Loader2 } from "lucide-react";
+import { Languages, ArrowLeft, Volume2, Flame, Sparkles, Loader2, X, Check } from "lucide-react";
 import { loadJSON, saveJSON } from "./storage.js";
 import { SHEET_CATEGORIES, SAMPLE_CATEGORIES } from "./vocabConfig.js";
 
@@ -41,17 +41,15 @@ const STR = {
     words: "คำ",
     start: "เริ่มเรียน",
     flip: "แตะการ์ดเพื่อดูเฉลย",
-    tapFirst: "แตะการ์ดก่อน แล้วค่อยปัด",
+    tapFirst: "แตะการ์ดก่อน แล้วค่อยกดปุ่ม",
     flashcardMode: "แฟลชการ์ด",
     quizMode: "ควิซ",
-    swipeRight: "ปัดขวา = จำได้",
-    swipeLeft: "ปัดซ้าย = ยังไม่ได้",
+    notYet: "ยังไม่ได้",
+    gotIt: "จำได้",
     quizPrompt: "แปลว่าอะไร?",
     correct: "ถูกต้อง!",
     wrong: "ยังไม่ถูก",
     correctAnswerIs: "เฉลย:",
-    onlySwipeLeft: "ปัดซ้ายเพื่อไปต่อ",
-    canSwipeRight: "ปัดขวาเพื่อไปต่อ",
     progress: (a, b) => `${a} / ${b}`,
     doneTitle: "จบชุดคำศัพท์แล้ว!",
     mastered: "จำได้แล้ว",
@@ -74,17 +72,15 @@ const STR = {
     words: "words",
     start: "Start studying",
     flip: "Tap the card to reveal",
-    tapFirst: "Tap the card first, then swipe",
+    tapFirst: "Tap the card first, then use the buttons",
     flashcardMode: "Flashcard",
     quizMode: "Quiz",
-    swipeRight: "Swipe right = got it",
-    swipeLeft: "Swipe left = not yet",
+    notYet: "Not yet",
+    gotIt: "Got it",
     quizPrompt: "What does it mean?",
     correct: "Correct!",
     wrong: "Not quite",
     correctAnswerIs: "Answer:",
-    onlySwipeLeft: "Swipe left to continue",
-    canSwipeRight: "Swipe right to continue",
     progress: (a, b) => `${a} / ${b}`,
     doneTitle: "Deck complete!",
     mastered: "Mastered",
@@ -165,18 +161,16 @@ function fetchSheetCards(url, categoryId) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  SWIPE CARD  (fixed height, quiz choices live inside the card)      */
+/*  SWIPE CARD  (now tap-only — buttons replace the drag gesture)      */
 /* ------------------------------------------------------------------ */
 function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isTop, onRevealChange }) {
   const t = STR[lang];
   const [flipped, setFlipped] = useState(false);
-  const [drag, setDrag] = useState({ x: 0, active: false });
   const [quizState, setQuizState] = useState({ status: "unanswered", picked: null });
+  const [flyDir, setFlyDir] = useState(null); // null | 'left' | 'right'
   const [choiceOrder] = useState(() =>
     card.quiz ? shuffle(card.quiz.options.map((opt, i) => ({ opt, i }))) : []
   );
-  const startX = useRef(0);
-  const cardRef = useRef(null);
 
   const isQuiz = mode === "quiz" && !!card.quiz;
   const revealed = isQuiz ? quizState.status !== "unanswered" : flipped;
@@ -198,44 +192,17 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
     if (isTop && onRevealChange) onRevealChange(revealed);
   }, [isTop, revealed, onRevealChange]);
 
-  const commit = useCallback(
-    (dir) => {
-      if (locked) return;
-      if (forcedLeft && dir === "right") return;
-      onResolve(dir);
-    },
-    [locked, forcedLeft, onResolve]
-  );
+  // once a fly-out direction is chosen, animate then resolve the card
+  useEffect(() => {
+    if (!flyDir) return;
+    const timer = setTimeout(() => onResolve(flyDir), 300);
+    return () => clearTimeout(timer);
+  }, [flyDir]); // eslint-disable-line
 
-  const onPointerDown = (e) => {
-    if (!isTop || locked) return;
-    startX.current = e.clientX;
-    setDrag({ x: 0, active: true });
-    try {
-      cardRef.current?.setPointerCapture?.(e.pointerId);
-    } catch (err) {
-      /* pointer capture not supported / already released — ignore */
-    }
-  };
-  const onPointerMove = (e) => {
-    if (!drag.active || !isTop || locked) return;
-    let dx = e.clientX - startX.current;
-    if (forcedLeft && dx > 0) dx = Math.min(dx, 16);
-    setDrag({ x: dx, active: true });
-  };
-  const endDrag = (e) => {
-    if (e?.pointerId != null) {
-      try {
-        cardRef.current?.releasePointerCapture?.(e.pointerId);
-      } catch (err) {
-        /* already released — ignore */
-      }
-    }
-    if (!isTop || locked) { setDrag({ x: 0, active: false }); return; }
-    const threshold = 90;
-    if (drag.x > threshold && !forcedLeft) commit("right");
-    else if (drag.x < -threshold) commit("left");
-    else setDrag({ x: 0, active: false });
+  const handleChoice = (dir) => {
+    if (locked || flyDir) return;
+    if (forcedLeft && dir === "right") return;
+    setFlyDir(dir);
   };
 
   const handleTap = () => {
@@ -249,30 +216,23 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
     setQuizState({ status: isCorrect ? "correct" : "wrong", picked: idx });
   };
 
-  const rotation = Math.max(-18, Math.min(18, drag.x / 10));
-  const rightGlow = Math.max(0, Math.min(1, drag.x / 120));
-  const leftGlow = Math.max(0, Math.min(1, -drag.x / 120));
+  const flyTransform =
+    flyDir === "right" ? "translateX(560px) rotate(22deg)"
+    : flyDir === "left" ? "translateX(-560px) rotate(-22deg)"
+    : "translateX(0) rotate(0deg)";
 
   return (
     <div
-      ref={cardRef}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerLeave={endDrag}
-      onPointerCancel={endDrag}
       style={{
         position: "absolute",
         inset: 0,
         height: CARD_HEIGHT,
-        transform: isTop
-          ? `translateX(${drag.x}px) rotate(${rotation}deg)`
-          : "scale(0.96) translateY(10px)",
-        transition: drag.active ? "none" : "transform 0.35s cubic-bezier(.2,.8,.2,1)",
-        touchAction: "pan-y",
-        cursor: isTop && !locked ? "grab" : "default",
+        transform: isTop ? flyTransform : "scale(0.96) translateY(10px)",
+        opacity: flyDir ? 0 : isTop ? 1 : 0.7,
+        transition: flyDir
+          ? "transform 0.3s cubic-bezier(.4,0,.6,1), opacity 0.3s ease-in 0.05s"
+          : "transform 0.35s cubic-bezier(.2,.8,.2,1), opacity 0.2s ease",
         zIndex: isTop ? 2 : 1,
-        opacity: isTop ? 1 : 0.7,
       }}
       className="select-none w-full"
     >
@@ -300,16 +260,11 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
           {stampLabel}
         </div>
 
-        <div style={{ position: "absolute", inset: 0, background: GREEN, opacity: rightGlow * 0.18, pointerEvents: "none" }} />
-        <div style={{ position: "absolute", inset: 0, background: RED, opacity: leftGlow * 0.18, pointerEvents: "none" }} />
-        {isTop && drag.x > 40 && (
-          <div style={{ position: "absolute", top: 20, left: 20, border: `3px solid ${GREEN}`, color: GREEN, padding: "4px 10px", fontFamily: "'Space Mono', monospace", fontWeight: 700, borderRadius: 8, transform: "rotate(-10deg)" }}>KNOW IT</div>
-        )}
-        {isTop && drag.x < -40 && (
-          <div style={{ position: "absolute", top: 20, right: 20, border: `3px solid ${RED}`, color: RED, padding: "4px 10px", fontFamily: "'Space Mono', monospace", fontWeight: 700, borderRadius: 8, transform: "rotate(10deg)" }}>REVIEW</div>
+        {flyDir && (
+          <div style={{ position: "absolute", inset: 0, background: flyDir === "right" ? GREEN : RED, opacity: 0.18, pointerEvents: "none" }} />
         )}
 
-        <div className="flex-1 flex flex-col px-6" style={{ overflowY: revealed ? "auto" : "hidden", paddingBottom: 20 }}>
+        <div className="flex-1 flex flex-col px-6" style={{ overflowY: revealed ? "auto" : "hidden", paddingBottom: 8 }}>
           <div style={{ flexGrow: wordCentered ? 1 : 0, flexShrink: 0, minHeight: 0, transition: "flex-grow 0.32s ease" }} />
 
           <div
@@ -389,8 +344,8 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
                   }}
                 >
                   {quizState.status === "correct"
-                    ? `✓ ${t.correct} ${t.canSwipeRight}`
-                    : `✕ ${t.wrong} — ${t.correctAnswerIs} ${card.thai}. ${t.onlySwipeLeft}`}
+                    ? `✓ ${t.correct}`
+                    : `✕ ${t.wrong} — ${t.correctAnswerIs} ${card.thai}`}
                 </div>
               )}
               <div>
@@ -419,8 +374,50 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
           <div style={{ flexGrow: 1, flexShrink: 0, minHeight: 0 }} />
         </div>
 
+        {/* bottom action buttons — replace the swipe gesture entirely */}
+        {isTop && (
+          <div
+            style={{
+              display: "flex", gap: 10, padding: "10px 16px 16px",
+              opacity: locked ? 0.35 : 1,
+              transition: "opacity 0.25s ease",
+              pointerEvents: locked ? "none" : "auto",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => handleChoice("left")}
+              aria-label="not yet"
+              style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                background: "rgba(225,72,60,0.1)", border: `1.5px solid ${RED}`, color: RED,
+                borderRadius: 999, padding: "10px 0", fontWeight: 700,
+                fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 13,
+              }}
+            >
+              <X size={16} /> {t.notYet}
+            </button>
+            <button
+              onClick={() => handleChoice("right")}
+              disabled={forcedLeft}
+              aria-label="got it"
+              style={{
+                flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                background: forcedLeft ? "rgba(43,182,115,0.05)" : "rgba(43,182,115,0.12)",
+                border: `1.5px solid ${GREEN}`, color: GREEN,
+                borderRadius: 999, padding: "10px 0", fontWeight: 700,
+                fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 13,
+                opacity: forcedLeft ? 0.35 : 1,
+                cursor: forcedLeft ? "not-allowed" : "pointer",
+              }}
+            >
+              <Check size={16} /> {t.gotIt}
+            </button>
+          </div>
+        )}
+
         {!isQuiz && locked && (
-          <div style={{ textAlign: "center", padding: "8px 0", fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 11, color: "rgba(20,23,43,0.35)" }}>
+          <div style={{ textAlign: "center", paddingBottom: 8, fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 11, color: "rgba(20,23,43,0.35)" }}>
             {t.tapFirst}
           </div>
         )}
@@ -513,12 +510,13 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
       </div>
 
       <div style={{ position: "relative", height: CARD_HEIGHT }}>
-        {/* peeking side cards — hint at swipe directions, fade in once the answer is revealed */}
+        {/* peeking side cards — tilted like a fanned hand of playing cards, fade in once the answer is revealed */}
         <div
           aria-hidden="true"
           style={{
             position: "absolute", top: 10, bottom: 10, left: -14, width: 40,
             background: RED, borderRadius: 18,
+            transform: "rotate(-9deg)", transformOrigin: "bottom center",
             opacity: topRevealed ? 0.55 : 0.15,
             transition: "opacity 0.3s ease",
             zIndex: 0,
@@ -529,6 +527,7 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
           style={{
             position: "absolute", top: 10, bottom: 10, right: -14, width: 40,
             background: GREEN, borderRadius: 18,
+            transform: "rotate(9deg)", transformOrigin: "bottom center",
             opacity: topRevealed ? 0.55 : 0.15,
             transition: "opacity 0.3s ease",
             zIndex: 0,
@@ -550,8 +549,8 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
       </div>
 
       <div className="flex items-center justify-between mt-5">
-        <div style={{ fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 11, color: "rgba(247,242,231,0.45)" }}>
-          {t.swipeLeft} · {t.swipeRight}
+        <div style={{ fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 11, color: "rgba(247,242,231,0.4)" }}>
+          {lang === "th" ? "กดปุ่มด้านล่างการ์ดเพื่อไปคำถัดไป" : "Use the buttons under the card to move on"}
         </div>
         {currentHasQuiz && (
           <button
