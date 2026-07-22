@@ -167,7 +167,7 @@ function fetchSheetCards(url, categoryId) {
 /* ------------------------------------------------------------------ */
 /*  SWIPE CARD  (fixed height, quiz choices live inside the card)      */
 /* ------------------------------------------------------------------ */
-function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isTop }) {
+function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isTop, onRevealChange }) {
   const t = STR[lang];
   const [flipped, setFlipped] = useState(false);
   const [drag, setDrag] = useState({ x: 0, active: false });
@@ -194,6 +194,10 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
     setChoicesIn(false);
   }, [showChoices]);
 
+  useEffect(() => {
+    if (isTop && onRevealChange) onRevealChange(revealed);
+  }, [isTop, revealed, onRevealChange]);
+
   const commit = useCallback(
     (dir) => {
       if (locked) return;
@@ -207,7 +211,11 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
     if (!isTop || locked) return;
     startX.current = e.clientX;
     setDrag({ x: 0, active: true });
-    cardRef.current?.setPointerCapture?.(e.pointerId);
+    try {
+      cardRef.current?.setPointerCapture?.(e.pointerId);
+    } catch (err) {
+      /* pointer capture not supported / already released — ignore */
+    }
   };
   const onPointerMove = (e) => {
     if (!drag.active || !isTop || locked) return;
@@ -215,7 +223,14 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
     if (forcedLeft && dx > 0) dx = Math.min(dx, 16);
     setDrag({ x: dx, active: true });
   };
-  const onPointerUp = () => {
+  const endDrag = (e) => {
+    if (e?.pointerId != null) {
+      try {
+        cardRef.current?.releasePointerCapture?.(e.pointerId);
+      } catch (err) {
+        /* already released — ignore */
+      }
+    }
     if (!isTop || locked) { setDrag({ x: 0, active: false }); return; }
     const threshold = 90;
     if (drag.x > threshold && !forcedLeft) commit("right");
@@ -243,8 +258,9 @@ function SwipeCard({ card, categoryColor, stampLabel, lang, mode, onResolve, isT
       ref={cardRef}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
+      onPointerUp={endDrag}
+      onPointerLeave={endDrag}
+      onPointerCancel={endDrag}
       style={{
         position: "absolute",
         inset: 0,
@@ -422,13 +438,20 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
   const [mode, setMode] = useState("flashcard");
   const [masteredCount, setMasteredCount] = useState(0);
   const [reviewCount, setReviewCount] = useState(0);
+  const [topRevealed, setTopRevealed] = useState(false);
   const total = deck.cards.length;
   const done = total - queue.length;
   const currentHasQuiz = queue[0]?.quiz != null;
+  const topCardId = queue[0]?.id;
 
   useEffect(() => {
     if (!currentHasQuiz && mode === "quiz") setMode("flashcard");
   }, [currentHasQuiz]); // eslint-disable-line
+
+  // reset the "revealed" flag whenever a new card becomes the top card
+  useEffect(() => {
+    setTopRevealed(false);
+  }, [topCardId]);
 
   const handleResolve = (dir) => {
     const card = queue[0];
@@ -490,6 +513,27 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
       </div>
 
       <div style={{ position: "relative", height: CARD_HEIGHT }}>
+        {/* peeking side cards — hint at swipe directions, fade in once the answer is revealed */}
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute", top: 10, bottom: 10, left: -14, width: 40,
+            background: RED, borderRadius: 18,
+            opacity: topRevealed ? 0.55 : 0.15,
+            transition: "opacity 0.3s ease",
+            zIndex: 0,
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute", top: 10, bottom: 10, right: -14, width: 40,
+            background: GREEN, borderRadius: 18,
+            opacity: topRevealed ? 0.55 : 0.15,
+            transition: "opacity 0.3s ease",
+            zIndex: 0,
+          }}
+        />
         {queue.slice(0, 2).reverse().map((card, idx, arr) => (
           <SwipeCard
             key={card.id}
@@ -500,6 +544,7 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
             mode={mode}
             isTop={idx === arr.length - 1}
             onResolve={idx === arr.length - 1 ? handleResolve : () => {}}
+            onRevealChange={idx === arr.length - 1 ? setTopRevealed : undefined}
           />
         ))}
       </div>
@@ -511,12 +556,15 @@ function DeckScreen({ deck, lang, onExit, onSwipeResult }) {
         {currentHasQuiz && (
           <button
             onClick={() => setMode((m) => (m === "flashcard" ? "quiz" : "flashcard"))}
+            disabled={topRevealed}
             style={{
               background: mode === "quiz" ? deck.color : "rgba(247,242,231,0.1)",
               color: mode === "quiz" ? INK : PAPER,
               border: "1px solid rgba(247,242,231,0.2)",
               borderRadius: 999, padding: "8px 14px",
               fontFamily: "'IBM Plex Sans Thai', sans-serif", fontSize: 12, fontWeight: 600,
+              opacity: topRevealed ? 0.4 : 1,
+              cursor: topRevealed ? "not-allowed" : "pointer",
             }}
           >
             {mode === "flashcard" ? t.quizMode : t.flashcardMode}
